@@ -6,7 +6,7 @@ import binFuncs
 from scipy.interpolate import interp1d
 import os
 
-from matplotlib.patches import Circle
+from matplotlib.patches import Ellipse
 
 # Class for storing source locations
 class Source:
@@ -208,7 +208,6 @@ class Mapper:
         self.obsid = self.attributes['obsid'].decode()
         self.source = self.attributes['source'].decode()
         
-        print(self.datafile['hk/antenna0/deTracker/equat_geoc'][:].shape)
         self.tRa, self.tDec, _ = self.datafile['hk/antenna0/deTracker/equat_geoc'][:].T
         self.tRa = self.tRa[self.tRa.size//2]/(1000.*60.*60.)
         self.tDec = self.tDec[self.tRa.size//2]/(1000.*60.*60.)
@@ -301,6 +300,19 @@ class Mapper:
                 pyplot.title('band {}'.format(band),size=16)
                 pyplot.grid()
 
+                if plot_circle:
+                    pyplot.gca().add_patch(
+                        Ellipse((self.crval[0],self.crval[1]),
+                                plot_circle_radius/np.cos(self.crval[1]*np.pi/180.),
+                                plot_circle_radius,
+                                edgecolor='red',facecolor='none',
+                                transform=pyplot.gca().get_transform('fk5'))
+                    )
+
+                lon = pyplot.gca().coords[0]
+                lat = pyplot.gca().coords[1]
+                                 
+                                        
                 if self.crpix[0]*self.cdelt[0]*2 > 1.5:
                     lon.set_major_formatter('d')
                     lon.set_minor_frequency(10)
@@ -314,12 +326,6 @@ class Mapper:
                     lat.display_minor_ticks(True)
                 else:
                     lat.set_major_formatter('d.d')
-                
-                if plot_circle:
-                    pyplot.gca().add_patch(
-                        Circle((self.crval[0],self.crval[1]), plot_circle_radius, edgecolor='red',facecolor='none',
-                               transform=pyplot.gca().get_transform('fk5'))
-                        )
                     
             pyplot.tight_layout(h_pad=4., w_pad=6., pad=4)
             pyplot.savefig(bavg_filename,bbox_inches='tight')
@@ -340,18 +346,18 @@ class PythonLiteralOption(click.Option):
 @click.command()
 @click.argument('filename')#, help='Level 1 hdf5 file')
 @click.option('--image_directory', default=None, help='Output image header directory')
-@click.option('--band_average', default=True, help='Average channels into single map')
-@click.option('--feed_average', default=False, help='Average all feeds into single map')
+@click.option('--band_average', default=True,type=bool, help='Average channels into single map')
+@click.option('--feed_average', default=False,type=bool, help='Average all feeds into single map')
 @click.option('--feeds', default=[0], cls=PythonLiteralOption, help='List of feeds to use (index from 0)')
-@click.option('--make_hits', default=True, help='Make hit maps')
-@click.option('--make_sky', default=True, help='Make sky maps')
+@click.option('--make_hits', default=True,type=bool, help='Make hit maps')
+@click.option('--make_sky', default=True,type=bool, help='Make sky maps')
 @click.option('--cdelt', default=[1./60.,1./60.],cls=PythonLiteralOption, help='WCS cdelt parameter of form [x_pix, y_pix]')
 @click.option('--field_width', default=[3.,3.], cls=PythonLiteralOption, help='Field width list of form [ra_width, dec_width]')
 @click.option('--ctype', default=['RA---TAN','DEC--TAN'], cls=PythonLiteralOption, help='Field WCS ctype list of form [RATYPE, DECTYPE]')
 @click.option('--crval', default=None, cls=PythonLiteralOption, help='Field centre list of form [RA_cen, Dec_cen], (Default: None, take ra/dec from average of scans)')
 @click.option('--source', default=None, help='Source name for field centre, if source unknown ignore (Default: None, take ra/dec centre from average ra/dec)')
-@click.option('--plot_circle',default=False, help='Overplot a circle of radius plot_circle_radius (Default: False)')
-@click.option('--plot_circle_radius', default=1, help='Radius of over plotted circle')
+@click.option('--plot_circle',default=False,type=bool, help='Overplot a circle of radius plot_circle_radius (Default: False)')
+@click.option('--plot_circle_radius', default=1,type=float, help='Radius of over plotted circle')
 def call_level1_hitmaps(filename,
                         image_directory,
                         band_average,
@@ -437,6 +443,7 @@ def level1_hitmaps(filename,
             
     mapper.setLevel1(fd, source)
     if feed_average:
+        
         maps = mapper(feeds, usetqdm=True)
         mapper.plotImages('{}/Hitmap_FeedAvg.png'.format(image_directory),
                           '{}/BandAverage_FeedAvg.png'.format(image_directory),
@@ -460,21 +467,4 @@ def level1_hitmaps(filename,
         
 
 if __name__ == "__main__":
-    #import argparse
-    #import os
-    #parser = argparse.ArgumentParser()
-    #parser.add_argument('--filename', type=str, required=True)
-    #parser.add_argument('--fieldWidth', type=float, required=False, default=3)
-    #parser.add_argument('--feeds')
-    
-    #args = parser.parse_args()
-
-    #width = args.fieldWidth
-    ##dirname =  args.filename.split('/')[-1].split('.h')[0]
-    #if not os.path.exists(dirname):
-    #    os.makedirs(dirname)
-
-    
-    #filename = args.filename 
-
-    call_level1_hitmaps()#filename, dirname+'/hitmap.png', dirname+'/img.png', feeds=range(0,1), fieldWidth=[width,width],makegMap=True)
+    call_level1_hitmaps()
