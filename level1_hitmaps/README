@@ -1,0 +1,24 @@
+[Installation]
+
+Script depends on cython code to be compiled first. Invoke:
+
+:> python setup.py build_ext --inplace
+
+[Running]
+
+To run the script with default parameters use:
+
+:> python level1_hitmap.py /path/to/level1.hd5
+
+To see a list of options call:
+
+:> python level1_hitmap.py --help
+
+[Notes]
+
+There is a "Source" class included in this script that has a dictionary of several key sources:
+Tau A
+Cas A
+Cyg A
+
+If you call the script with --source TauA the map will be centred on Tau A, and similarly for other sources
