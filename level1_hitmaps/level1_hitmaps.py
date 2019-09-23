@@ -69,8 +69,11 @@ class Mapper:
         """
         if not isinstance(items, (range,tuple,list)):
             items = [items]
-
-        self.feeds = items
+ 
+        feedlist = self.datafile['spectrometer/feeds'][...].astype(int)
+        getfeeds = lambda f: np.argmin((f-feedlist)**2)
+        
+        self.feeds = map(getfeeds,items)
         self.usetqdm=usetqdm
 
         if isinstance(self.ra, type(None)):
@@ -223,6 +226,8 @@ class Mapper:
         self.mask[self.featureBits(features.astype(float), 13)] = 0
         self.mask[features == 0] = 0
         self.mask = self.mask.astype(int)
+
+        
         #self.mask[:] = 1
         # If we don't spe
         if isinstance(self.crval, type(None)):
@@ -330,7 +335,14 @@ class Mapper:
             pyplot.tight_layout(h_pad=4., w_pad=6., pad=4)
             pyplot.savefig(bavg_filename,bbox_inches='tight')
 
+    def SaveMaps(self,filename):
+        d = h5py.File(filename)
 
+        dset = d.create_dataset('maps/bandavg', data=self.map_bavg)
+        hset = d.create_dataset('maps/hitmap',data=self.hits)
+
+        d.close()
+        
 from tqdm import tqdm 
 import click
 import ast
@@ -450,6 +462,7 @@ def level1_hitmaps(filename,
                           feeds,
                           plot_circle,
                           plot_circle_radius)
+        #mapper.SaveMaps('{}/OutputMap.hd5'.format(image_directory))
         return
                    
     for feed in tqdm(feeds):
@@ -459,8 +472,8 @@ def level1_hitmaps(filename,
 
         maps = mapper(feed)
 
-        mapper.plotImages('{}/Hitmap_Feed{:02d}.png'.format(image_directory,feed+1),
-                          '{}/BandAverage_Feed{:02d}.png'.format(image_directory,feed+1),
+        mapper.plotImages('{}/Hitmap_Feed{:02d}.png'.format(image_directory,feed),
+                          '{}/BandAverage_Feed{:02d}.png'.format(image_directory,feed),
                           [feed],
                           plot_circle,
                           plot_circle_radius)
