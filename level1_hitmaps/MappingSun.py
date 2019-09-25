@@ -10,7 +10,10 @@ from matplotlib.patches import Ellipse
 
 from Mapping import Mapper,NormaliseFilter,AtmosphereFilter
 from Utilities import Source
-from comancpipeline.Tools import Coordinates
+try:
+    from comancpipeline.Tools import Coordinates
+except:
+    pass
 
 
 class MapperSun(Mapper):        

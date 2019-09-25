@@ -9,6 +9,7 @@ import os
 from matplotlib.patches import Ellipse
 from Mapping import Mapper
 from MappingAzEl import MapperAzEl
+from MappingSun import MapperSun
 
 # Class for storing source locations
 class Source:
@@ -68,7 +69,8 @@ class PythonLiteralOption(click.Option):
 @click.option('--source', default=None, help='Source name for field centre, if source unknown ignore (Default: None, take ra/dec centre from average ra/dec)')
 @click.option('--plot_circle',default=False,type=bool, help='Overplot a circle of radius plot_circle_radius (Default: False)')
 @click.option('--plot_circle_radius', default=1,type=float, help='Radius of over plotted circle')
-@click.option('--az_el_mode',default=False,type=bool, help='Plot in az/el coordinates not Ra/Dec (Default: False)')
+@click.option('--az_el_mode',default=False,type=bool, help='Plot in az/el coordinates(Default: False)')
+@click.option('--sun_mode',default=False,type=bool, help='Plot in Sun centric coordinates  (Default: False)')
 def call_level1_hitmaps(filename,
                         image_directory,
                         band_average,
@@ -83,7 +85,8 @@ def call_level1_hitmaps(filename,
                         source,
                         plot_circle,
                         plot_circle_radius,
-                        az_el_mode):
+                        az_el_mode,
+                        sun_mode):
 
     level1_hitmaps(filename,
                    image_directory,
@@ -99,7 +102,8 @@ def call_level1_hitmaps(filename,
                    source,
                    plot_circle,
                    plot_circle_radius,
-                   az_el_mode)
+                   az_el_mode,
+                   sun_mode)
     
 
 def level1_hitmaps(filename,
@@ -116,7 +120,8 @@ def level1_hitmaps(filename,
                    source='None',
                    plot_circle=False,
                    plot_circle_radius=1,
-                   AzElMode=False):
+                   AzElMode=False,
+                   SunMode=False):
     
     """Plot hit maps for feeds
 
@@ -151,6 +156,14 @@ def level1_hitmaps(filename,
                             cdelt=cdelt,
                             crpix=[xpixelWidth//2, ypixelWidth//2],
                             ctype=ctype)
+    elif SunMode:
+        mapper = MapperSun(makeHitMap=make_hits,
+                           makeAvgMap=make_sky,
+                           crval=crval,
+                           cdelt=cdelt,
+                           crpix=[xpixelWidth//2, ypixelWidth//2],
+                           ctype=ctype)
+        
     else:
         mapper = Mapper(makeHitMap=make_hits,
                         makeAvgMap=make_sky,
