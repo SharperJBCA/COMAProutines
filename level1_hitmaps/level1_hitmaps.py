@@ -238,6 +238,8 @@ class Mapper:
                 self.crval = [np.median(self.ra[0,:]),
                               np.median(self.dec[0,:])]
 
+
+
         self.setWCS(self.crval, self.cdelt, self.crpix, self.ctype)
 
     def plotImages(self, hit_filename='hitmap.png', bavg_filename='bavgmap.png',
