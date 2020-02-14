@@ -265,6 +265,7 @@ class Mapper:
         """
         
         output = np.zeros(features.size).astype(bool)
+        features[features == 0] = np.nan
         power = np.floor(np.log(features)/np.log(2) )
         mask  = (features - 2**power) == 0
         output[power == target] = True
@@ -278,6 +279,20 @@ class Mapper:
     def setSource(self,source):
         self.source = source
 
+    def gnomproj(self, xmin, xmax, ymin, ymax, cdelt, theta0, phi0):
+
+        R = lambda theta: 1/np.tan(theta)
+        x = lambda theta, phi: R(theta) * np.sin(phi-phi0)
+        y = lambda theta, phi: -R(theta) * np.cos(phi-phi0)
+        
+        xproj = x(theta0, np.array([xmin, xmax]))#/cdelt
+        yproj = y(np.array([ymin, ymax]), phi0)#/cdelt
+
+        nxpix = int(np.max(xproj)-np.min(xproj))
+        nypix = int(np.max(yproj)-np.min(yproj))
+
+        return nxpix, nypix
+
     def setCrval(self):
         if isinstance(self.crval, type(None)):
             if self.source in sources:
@@ -290,7 +305,12 @@ class Mapper:
         if isinstance(self.npix, type(None)):
             xmax, xmin = np.max(self.x[...]), np.min(self.x[...])
             ymax, ymin = np.max(self.y[...]), np.min(self.y[...])
-            self.nxpix = int((xmax-xmin)/self.cdelt[0])
+            #self.nxpix,self.nypix= 
+            #self.gnomproj( xmin, xmax, ymin, ymax, 
+            #                                      self.cdelt[0]*np.pi/180., 
+            #                                      self.crval[1]*np.pi/180., 
+            #                                      self.crval[0]*np.pi/180.)
+            self.nxpix = int((xmax-xmin)/self.cdelt[0] *np.cos(self.crval[1]*np.pi/180.) )
             self.nypix = int((ymax-ymin)/self.cdelt[1])
         else:
             self.nxpix = int(self.npix[0])
@@ -299,8 +319,10 @@ class Mapper:
         largest_pix_axis = int(np.max([self.nxpix, self.nypix]))
         self.nxpix = largest_pix_axis
         self.nypix = largest_pix_axis
-
-        self.crpix = [int((self.crval[0]-xmin)/self.cdelt[0]), int((self.crval[1]-ymin)/self.cdelt[1])]
+        xpix_vals = (np.arange(self.nxpix)-self.nxpix/2.)*self.cdelt[0] + self.crval[0]
+        ypix_vals = (np.arange(self.nypix)-self.nypix/2.)*self.cdelt[1] + self.crval[1]
+        
+        self.crpix = [largest_pix_axis//2, largest_pix_axis//2]
 
     def setLevel1(self, datafile, source =''):
         """
@@ -319,7 +341,7 @@ class Mapper:
 
         # load but do not read yet.
         self.x = self.datafile['spectrometer/pixel_pointing/pixel_ra']
-        self.y = self.datafile['spectrometer/pixel_pointing/pixel_dec']
+        self.y = self.datafile['spectrometer/pixel_pointing/pixel_dec'][...]
         self.xCoordinateName = 'RA'
         self.yCoordinateName = 'Dec'
 
@@ -425,11 +447,11 @@ class Mapper:
                 cbar_ax = fig.add_subplot(spec[yp,xp+1])
                 cax_pos = cbar_ax.get_position()
                 ax_pos = ax.get_position()
-                cbar_ax.set_position([cax_pos.x0-pad, ax_pos.y0, cax_pos.width, ax_pos.height])
+                cbar_ax.set_position([cax_pos.x0-pad-0.025, ax_pos.y0, cax_pos.width, ax_pos.height])
                 
                 cbar = pyplot.colorbar(cax=cbar_ax)
-                cbar.ax.tick_params(labelsize=12)
-                cbar.set_label('K',size=14)
+                cbar.ax.tick_params(labelsize=8, pad=0)
+                cbar.set_label('K',size=10)
                 pyplot.sca(ax)
                 pyplot.xlabel('{}'.format(self.xCoordinateName))
                 pyplot.ylabel('{}'.format(self.yCoordinateName))
