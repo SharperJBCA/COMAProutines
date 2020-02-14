@@ -4,7 +4,7 @@ from cpython cimport array
 import array
 
 
-def binValues(double[:] image, long[:] pixels, float[:] weights=None, long[:] mask=None):
+def binValues(double[:] image, long[:] pixels, double[:] weights=None, long[:] mask=None):
     """
     A simple binning routine for map-making. Sum is done in place.
     

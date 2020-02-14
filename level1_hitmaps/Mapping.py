@@ -6,6 +6,7 @@ import binFuncs
 from scipy.interpolate import interp1d
 import os
 
+from tqdm import tqdm 
 from matplotlib.patches import Ellipse
 
 from Utilities import Source, sources
@@ -26,13 +27,12 @@ class AtmosphereFilter:
     def __call__(self,DataClass, tod, **kwargs):
         feed = kwargs['FEED']
         el   = DataClass.el[feed,:]
-        mask = DataClass.mask
+        mask = DataClass.atmmask
 
         gd = (np.isnan(tod) == False) & (mask == 1)
         try:
             # Calculate slab
             A = 1./np.sin(el*np.pi/180.)
-
             # Build atmospheric model
             pmdl = np.poly1d(np.polyfit(A[gd],tod[gd],1))
             # Subtract atmospheric slab
@@ -54,7 +54,35 @@ class AtmosphereFilter:
 
 
         return tod
-  
+
+def quick_cal(hkmjd,_status,_thot,mjd,tod):
+    """
+    A routine for quickly calculating the gain calibration
+    """
+
+    status = np.interp(mjd,hkmjd,_status)
+    thot   = np.interp(mjd,hkmjd,_thot)
+
+    vane_in = np.where((status == 1))[0]
+    dvane = vane_in[1:] - vane_in[:-1]
+    nvanes = len(np.where((dvane > 2))[0]) + 1
+    if nvanes > 1:
+        vane_edges = [[vane_in[0],vane_in[np.where((dvane > 2))[0][0]]],
+                      [vane_in[np.where((dvane > 2))[0][0]+1],vane_in[-1]]]
+    else:
+        vane_edges = [[vane_in[0],vane_in[-1]]]
+
+    vane_edges = np.array(vane_edges).astype(int)
+    offset = int(20*50) # 20 second offset
+    tcold  = 2.73
+    gains = np.zeros(nvanes)
+    for i, (low, high) in enumerate(vane_edges):
+        phot = np.mean(tod[low:high])
+        offset = int(offset*(-1)**i)
+        pcold= np.mean(tod[low+offset:high+offset])
+        gains[i] = (phot - pcold)/(np.mean(thot[low:high]) - tcold)
+    return np.nanmean(gains)
+
 class Mapper:
 
     def __init__(self, 
@@ -62,21 +90,25 @@ class Mapper:
                  makeAvgMap=False,
                  crval=None, 
                  cdelt=[1.,1.], 
-                 crpix=[128,128],
-                 ctype=['RA---TAN','DEC--TAN']):
+                 npix=None,#128,128],
+                 ctype=['RA---TAN','DEC--TAN'],
+                 image_directory='',
+                 plot_circle=False,
+                 plot_circle_radius=1):
 
-        
+        self.plot_circle=plot_circle
+        self.plot_circle_radius=plot_circle_radius
+        self.image_directory = image_directory
         # Cdelt given in arcmin
         self.crval = crval
         self.cdelt = [cd/60. for cd in cdelt]
-        print(self.cdelt)
-        self.crpix = crpix
+        #self.crpix = crpix
         self.ctype = ctype
         self.makeHitMap = makeHitMap
         self.makeAvgMap = makeAvgMap
 
-        self.nxpix = int(crpix[0]*2)
-        self.nypix = int(crpix[1]*2)
+        self.npix = npix # int(crpix[0]*2)
+        #self.nypix = int(crpix[1]*2)
 
         # Data containers
         self.x = None
@@ -86,7 +118,7 @@ class Mapper:
         self.map_bavg = None
 
         # TOD filters:
-        self.filters = [NormaliseFilter(),AtmosphereFilter()]
+        self.filters = []#CalVane()]#NormaliseFilter(),AtmosphereFilter()]
 
     def __call__(self, items, usetqdm=False):
         """
@@ -95,11 +127,18 @@ class Mapper:
         if not isinstance(items, (range,tuple,list)):
             items = [items]
 
-        # Select 
-        feedlist = self.datafile['spectrometer/feeds'][...].astype(int)
-        getfeeds = lambda f: np.argmin((f-feedlist)**2)
+        # Store list of feed ids in array indexing
+        self.feedlist = self.datafile['spectrometer/feeds'][...].astype(int)
+
+        # Create a dictionary to map feedid to feed array index
+        self.feedmap  = {feedid:feed_index for feed_index,feedid in enumerate(self.feedlist)}
         
-        self.feeds = map(getfeeds,items)
+        # Store a list of the feed array indices
+        
+        self.feed_indexs = [self.feedmap[feedid] for feedid in items if feedid in self.feedmap]
+        if len(self.feed_indexs) == 0:
+            raise ValueError('None of the chosen feeds are available')
+        self.feed_ids    = [feedid for feedid in items if feedid in self.feedlist]
         self.usetqdm=usetqdm
 
         if isinstance(self.x, type(None)):
@@ -107,7 +146,22 @@ class Mapper:
             return
         else:
             if self.makeAvgMap:
-                self.map_bavg, self.hits = self.avgMap(self.feeds, self.x, self.y, self.tod_bavg)
+                self.map_bavg, self.hits = self.avgMap(self.feed_indexs, self.x, self.y, self.tod_bavg, self.mask)
+
+                fstr = '-'.join(['{:02d}'.format(feed) for feed in self.feed_ids])
+
+                outdir = '{}/Feeds-{}'.format(self.image_directory,fstr)
+                if not os.path.exists(outdir):
+                    os.makedirs(outdir)
+
+                # self.plotImages(self.map_bavg, self.hits,
+                #                 '{}/Hitmap_Feeds-{}.png'.format(outdir,fstr),
+                #                 '{}/BandAverage_Feeds-{}.png'.format(outdir,fstr),
+                #                 self.plot_circle,
+                #                 self.plot_circle_radius)
+                # self.SaveMaps(self.map_bavg,
+                #               '{}/BandAverage_Feeds-{}.fits'.format(outdir,fstr))
+
                 return self.map_bavg, self.hits
             elif self.makeHitMap:
                 self.hits = self.hitMap(self.feeds, self.x, self.y)
@@ -145,58 +199,63 @@ class Mapper:
         self.wcs.wcs.crpix = crpix
         self.wcs.wcs.ctype = ctype
 
-    def hitMap(self,feeds, x, y):
+    def hitMap(self,feeds, x, y, mask):
         """
         Generate hit count maps
         """
         self.hits = np.zeros((self.nxpix*self.nypix))
         for feed in feeds:
-            pixels = self.getFlatPixels(self.x[feed,:], self.y[feed,:])
-            binFuncs.binValues(self.hits, pixels, mask=self.mask)
+            pixels = self.getFlatPixels(x[feed,:], y[feed,:])
+            binFuncs.binValues(self.hits, pixels, mask=mask)
             
         return np.reshape(self.hits, (self.nypix, self.nxpix)) * self.tsamp
 
-    def avgMap(self, feeds, x, y, d):
+    def avgMap(self, feeds, x, y, d, mask):
         """
         Generate sky maps
         """
 
-        if isinstance(self.hits, type(None)):
-            self.hits = np.zeros((self.nxpix*self.nypix))
-            doHits = True
-        else:
-            doHits = False
+        doHits = True
 
-        dataShape = d.shape
+        dataShape  = d.shape
         nSidebands = dataShape[1]
-        self.map_bavg = np.zeros((nSidebands, self.nxpix*self.nypix))
+        map_bavg   = np.zeros((nSidebands, self.nxpix*self.nypix))
+        hits       = np.zeros((self.nxpix*self.nypix))
         if self.usetqdm:
             tfeeds = tqdm(feeds)
         else:
             tfeeds= feeds
 
         # Loop over COMAP feeds/pixels
+        mjd   = self.datafile['spectrometer/MJD'][...]
+        hkmjd = self.datafile['hk/antenna0/vane/utc'][:]
+        status= self.datafile['hk/antenna0/vane/status'][:]
+        if np.sum(status) == 0:
+            status = (self.datafile['hk/antenna0/vane/angle'][:] < 7000).astype(int)
+        thot  = self.datafile['hk/antenna0/vane/Tvane'][:]/100. + 273.15
+        
         for feed in tfeeds:
 
             # Get pixels from sky coordinates
-            pixels = self.getFlatPixels(self.x[feed,:], self.y[feed,:])
+            pixels = self.getFlatPixels(x[feed,:], y[feed,:])
             if doHits:
-                binFuncs.binValues(self.hits, pixels, mask=self.mask)
+                binFuncs.binValues(hits, pixels, mask=mask)
 
             # Loop over sidebands
             for sideband in range(nSidebands):
                 tod = d[feed,sideband,:]
-
+                gain = quick_cal(hkmjd,status,thot,mjd,tod)
+                tod /= gain
+                tod -= np.nanmedian(tod)
                 for filtermode in self.filters:
-                    tod = filtermode(self,tod,**{'FEED':feed,'SIDEBAND':sideband})
+                    tod = filtermode(self,tod,**{'FEED':self.feed_ids[feed],'SIDEBAND':sideband})
 
-                mask = self.mask*1
-                mask[np.isnan(tod)] = 0
-                binFuncs.binValues(self.map_bavg[sideband,:], pixels, weights=tod, mask=mask)
-
-        self.map_bavg = np.reshape(self.map_bavg, (nSidebands, self.nypix, self.nxpix))
-        self.hits = np.reshape(self.hits, (self.nypix, self.nxpix))
-        return self.map_bavg/self.hits, self.hits  * self.tsamp
+                _mask = mask*1
+                _mask[np.isnan(tod)] = 0
+                binFuncs.binValues(map_bavg[sideband,:], pixels, weights=tod.astype(float), mask=_mask)
+        map_bavg = np.reshape(map_bavg, (nSidebands, self.nypix, self.nxpix))
+        hits = np.reshape(hits, (self.nypix, self.nxpix))
+        return map_bavg/hits, hits  * self.tsamp
 
     def featureBits(self,features, target):
         """
@@ -226,9 +285,20 @@ class Mapper:
                 self.crval = [np.median(self.x[0,:]),
                               np.median(self.y[0,:])]
 
-        
+        if isinstance(self.npix, type(None)):
+            xmax, xmin = np.max(self.x[...]), np.min(self.x[...])
+            ymax, ymin = np.max(self.y[...]), np.min(self.y[...])
+            self.nxpix = int((xmax-xmin)/self.cdelt[0])
+            self.nypix = int((ymax-ymin)/self.cdelt[1])
+            self.crpix = [int(self.nxpix//2),int(self.nypix//2)]
+        else:
+            self.nxpix = int(self.npix[0])
+            self.nypix = int(self.npix[1])
+            self.crpix = [int(self.nxpix//2),int(self.nypix//2)]
+
     def setLevel1(self, datafile, source =''):
         """
+        Store HDF5 file unit, read in any data that is needed
         """
         self.setSource(source)
         
@@ -239,10 +309,11 @@ class Mapper:
         self.tsamp = float(self.attributes['tsamp'].decode())
         self.obsid = self.attributes['obsid'].decode()
         self.source = self.attributes['source'].decode()
-        
+        self.bandnames =self.datafile['spectrometer/bands'][:]
+
         # load but do not read yet.
         self.x = self.datafile['spectrometer/pixel_pointing/pixel_ra']
-        self.y= self.datafile['spectrometer/pixel_pointing/pixel_dec']
+        self.y = self.datafile['spectrometer/pixel_pointing/pixel_dec']
         self.xCoordinateName = 'RA'
         self.yCoordinateName = 'Dec'
 
@@ -255,21 +326,25 @@ class Mapper:
         self.mask[self.featureBits(self.features.astype(float), 13)] = 0
         self.mask[self.features == 0] = 0
         self.mask = self.mask.astype(int)
-
+        self.atmmask = self.mask
         
-        # If we don't spe
+        # If we don't specify crval or npix then guess some reasonable values
         self.setCrval()
 
         self.setWCS(self.crval, self.cdelt, self.crpix, self.ctype)
 
-    def plotImages(self, hit_filename='hitmap.png', bavg_filename='bavgmap.png',
-                   feeds = [0],
+    def plotImages(self, feeds=None,
+                   hit_filename='hitmap.png', bavg_filename='bavgmap.png',
                    plot_circle=False,plot_circle_radius=1):
         """
         Write out band average and hit map distributions
         """
 
-        flist = [feed+1 for feed in feeds]
+        if isinstance(feeds, type(None)):
+            flist = [feed for feed in self.feed_ids]
+        else:
+            flist = [feed for feed in feeds if feed in self.feed_ids]
+
         if len(flist) > 1:
             fstr = '{:.0f}...{:.0f}'.format(np.min(flist), np.max(flist))
         else:
@@ -278,7 +353,6 @@ class Mapper:
         # Plot the Hit map
         fig = pyplot.figure(figsize=(12,10))
         ax = pyplot.subplot(111,projection=self.wcs)
-
         pyplot.imshow(np.log10(self.hits), aspect='auto')
         low = int(np.min(np.log10(self.hits[self.hits > 0])))
         high= int(np.max(np.log10(self.hits[self.hits > 0]))) + 1
@@ -291,7 +365,6 @@ class Mapper:
 
         lon = pyplot.gca().coords[0]
         lat = pyplot.gca().coords[1]
-
         if self.crpix[0]*self.cdelt[0]*2 > 1.5:
             lon.set_major_formatter('d')
             lon.set_minor_frequency(10)
@@ -306,6 +379,7 @@ class Mapper:
         else:
             lat.set_major_formatter('d.d')
         
+        pyplot.gca().invert_xaxis()
         pyplot.savefig(hit_filename,bbox_inches='tight')
         pyplot.clf()
 
@@ -315,16 +389,18 @@ class Mapper:
 
             for band in range(self.map_bavg.shape[0]):
                 ax = pyplot.subplot(2,2,1+band,projection=self.wcs)
-                pyplot.imshow((self.map_bavg[band,...]), aspect='auto',vmin=-2,vmax=2)
-                cbar = pyplot.colorbar(label=r'Normalised Units')
+                #med = np.nanmedian(self.map_bavg[band])
+                #mad = np.sqrt(np.nanmedian((self.map_bavg[band,self.hits >0]-med)**2))
+                pyplot.imshow((self.map_bavg[band,...]), aspect='auto')#,vmin=-mad*2,vmax=5*mad)#,vmin=-2,vmax=2)
+                cbar = pyplot.colorbar(label=r'K')
                 pyplot.xlabel('{}'.format(self.xCoordinateName))
                 pyplot.ylabel('{}'.format(self.yCoordinateName))
 
-                if self.source in sources:
-                    sRa,sDec = sources[self.source]()
-                    pyplot.plot(sRa,sDec, 'xr', transform=pyplot.gca().get_transform('world'))
+                #if self.source in sources:
+                #    sRa,sDec = sources[self.source]()
+                #    pyplot.plot(sRa,sDec, 'xr', transform=pyplot.gca().get_transform('world'))
         
-                pyplot.title('band {}'.format(band),size=16)
+                pyplot.title('{}'.format(self.bandnames[band].decode('utf-8')),size=16)
                 pyplot.grid()
 
                 if plot_circle:
@@ -353,15 +429,16 @@ class Mapper:
                     lat.display_minor_ticks(True)
                 else:
                     lat.set_major_formatter('d.d')
-                    
+                pyplot.gca().invert_xaxis()
+
             pyplot.tight_layout(h_pad=4., w_pad=6., pad=4)
             pyplot.savefig(bavg_filename,bbox_inches='tight')
 
-    def SaveMaps(self,filename):
+    def SaveMaps(self,map_bavg, filename):
 
         from astropy.io import fits
         header = self.wcs.to_header()
-        hdu = fits.PrimaryHDU(self.map_bavg, header=header)
+        hdu = fits.PrimaryHDU(map_bavg, header=header)
         hdu1 = fits.HDUList([hdu])
         hdu1.writeto(filename,overwrite=True)
         #d = h5py.File(filename)
