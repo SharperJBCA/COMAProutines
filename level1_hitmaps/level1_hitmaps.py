@@ -16,7 +16,6 @@ import click
 import ast
 class PythonLiteralOption(click.Option):
     def type_cast_value(self,ctx,value):
-        print(value)
         if isinstance(value,str):
             try:
                 return ast.literal_eval(value)

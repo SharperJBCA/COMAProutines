@@ -8,7 +8,7 @@ import os
 
 from tqdm import tqdm 
 from matplotlib.patches import Ellipse
-
+from matplotlib import gridspec
 from Utilities import Source, sources
 
 class NormaliseFilter:
@@ -118,7 +118,7 @@ class Mapper:
         self.map_bavg = None
 
         # TOD filters:
-        self.filters = []#CalVane()]#NormaliseFilter(),AtmosphereFilter()]
+        self.filters = [AtmosphereFilter()]
 
     def __call__(self, items, usetqdm=False):
         """
@@ -234,28 +234,30 @@ class Mapper:
             status = (self.datafile['hk/antenna0/vane/angle'][:] < 7000).astype(int)
         thot  = self.datafile['hk/antenna0/vane/Tvane'][:]/100. + 273.15
         
-        for feed in tfeeds:
+        for feed_index in tfeeds:
 
             # Get pixels from sky coordinates
-            pixels = self.getFlatPixels(x[feed,:], y[feed,:])
+            pixels = self.getFlatPixels(x[feed_index,:], y[feed_index,:])
             if doHits:
                 binFuncs.binValues(hits, pixels, mask=mask)
 
             # Loop over sidebands
             for sideband in range(nSidebands):
-                tod = d[feed,sideband,:]
+                tod = d[feed_index,sideband,:]
                 gain = quick_cal(hkmjd,status,thot,mjd,tod)
                 tod /= gain
-                tod -= np.nanmedian(tod)
                 for filtermode in self.filters:
-                    tod = filtermode(self,tod,**{'FEED':self.feed_ids[feed],'SIDEBAND':sideband})
+                    tod = filtermode(self,tod,**{'FEED':feed_index,'SIDEBAND':sideband})
 
                 _mask = mask*1
                 _mask[np.isnan(tod)] = 0
                 binFuncs.binValues(map_bavg[sideband,:], pixels, weights=tod.astype(float), mask=_mask)
         map_bavg = np.reshape(map_bavg, (nSidebands, self.nypix, self.nxpix))
         hits = np.reshape(hits, (self.nypix, self.nxpix))
-        return map_bavg/hits, hits  * self.tsamp
+
+        outputmap = map_bavg*1.
+        outputmap[:,hits != 0] /= hits[hits !=0]
+        return outputmap, hits  * self.tsamp
 
     def featureBits(self,features, target):
         """
@@ -290,11 +292,15 @@ class Mapper:
             ymax, ymin = np.max(self.y[...]), np.min(self.y[...])
             self.nxpix = int((xmax-xmin)/self.cdelt[0])
             self.nypix = int((ymax-ymin)/self.cdelt[1])
-            self.crpix = [int(self.nxpix//2),int(self.nypix//2)]
         else:
             self.nxpix = int(self.npix[0])
             self.nypix = int(self.npix[1])
-            self.crpix = [int(self.nxpix//2),int(self.nypix//2)]
+        # force equal aspect ratio
+        largest_pix_axis = int(np.max([self.nxpix, self.nypix]))
+        self.nxpix = largest_pix_axis
+        self.nypix = largest_pix_axis
+
+        self.crpix = [int((self.crval[0]-xmin)/self.cdelt[0]), int((self.crval[1]-ymin)/self.cdelt[1])]
 
     def setLevel1(self, datafile, source =''):
         """
@@ -353,7 +359,9 @@ class Mapper:
         # Plot the Hit map
         fig = pyplot.figure(figsize=(12,10))
         ax = pyplot.subplot(111,projection=self.wcs)
-        pyplot.imshow(np.log10(self.hits), aspect='auto')
+        loghits = self.hits*1
+        loghits[loghits == 0] = np.nan
+        pyplot.imshow(np.log10(loghits), aspect='auto')
         low = int(np.min(np.log10(self.hits[self.hits > 0])))
         high= int(np.max(np.log10(self.hits[self.hits > 0]))) + 1
         cbar = pyplot.colorbar(label=r'Seconds', ticks=np.arange(low,high))
@@ -385,14 +393,44 @@ class Mapper:
 
         # Plot BandAverageMaps
         if self.makeAvgMap:
-            fig.suptitle('Band Avg: obsid {}, source {}, feeds {}'.format(self.obsid, self.source, fstr),size=14)
+            # Explicitly define matplotlib axes
+            widths  = [2,0.2,2,0.2]
+            heights = [2,2]
+            
+            spec = fig.add_gridspec(ncols=4,nrows=2,width_ratios=widths,
+                                    height_ratios=heights)
 
-            for band in range(self.map_bavg.shape[0]):
-                ax = pyplot.subplot(2,2,1+band,projection=self.wcs)
-                #med = np.nanmedian(self.map_bavg[band])
-                #mad = np.sqrt(np.nanmedian((self.map_bavg[band,self.hits >0]-med)**2))
-                pyplot.imshow((self.map_bavg[band,...]), aspect='auto')#,vmin=-mad*2,vmax=5*mad)#,vmin=-2,vmax=2)
-                cbar = pyplot.colorbar(label=r'K')
+            fig.suptitle('Band Avg: obsid {}, source {}, feeds {}'.format(self.obsid, self.source, fstr),size=14)
+            positions = [[0,0],[2,0],[0,1],[2,1]]
+            for band, (xp,yp) in enumerate(positions):
+#range(self.map_bavg.shape[0]):
+                #ax = pyplot.subplot(2,2,1+band,projection=self.wcs)
+                ax = fig.add_subplot(spec[yp,xp], projection=self.wcs)
+                ax_pos = ax.get_position()
+                pad = 0.05
+                if xp > 1:
+                    pad *= -1
+                else:
+                    pad *= 1
+                ypad = 0.05
+                if yp == 0:
+                    ypad *= -1
+                else:
+                    ypad *= 1
+                #ax.set_position([ax_pos.x0+pad, ax_pos.y0+pad, ax_pos.width-pad*2, ax_pos.height-pad*2])
+                ax.set_position([ax_pos.x0-pad, ax_pos.y0-ypad, ax_pos.width, ax_pos.height])
+
+                pyplot.imshow((self.map_bavg[band,...]),aspect='equal') 
+                #aspect='equal')
+                cbar_ax = fig.add_subplot(spec[yp,xp+1])
+                cax_pos = cbar_ax.get_position()
+                ax_pos = ax.get_position()
+                cbar_ax.set_position([cax_pos.x0-pad, ax_pos.y0, cax_pos.width, ax_pos.height])
+                
+                cbar = pyplot.colorbar(cax=cbar_ax)
+                cbar.ax.tick_params(labelsize=12)
+                cbar.set_label('K',size=14)
+                pyplot.sca(ax)
                 pyplot.xlabel('{}'.format(self.xCoordinateName))
                 pyplot.ylabel('{}'.format(self.yCoordinateName))
 
@@ -431,7 +469,7 @@ class Mapper:
                     lat.set_major_formatter('d.d')
                 pyplot.gca().invert_xaxis()
 
-            pyplot.tight_layout(h_pad=4., w_pad=6., pad=4)
+            # pyplot.tight_layout(h_pad=0.0, w_pad=0.5)#, pad=4)
             pyplot.savefig(bavg_filename,bbox_inches='tight')
 
     def SaveMaps(self,map_bavg, filename):
