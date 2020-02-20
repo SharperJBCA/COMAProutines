@@ -30,6 +30,10 @@ class AtmosphereFilter:
         mask = DataClass.atmmask
 
         gd = (np.isnan(tod) == False) & (mask == 1)
+        if np.sum(gd) < 50:
+            return tod - np.nanmedian(tod)
+        if (np.nanmax(el) - np.nanmin(el))*60 < 30:
+            return tod - np.nanmedian(tod)
         try:
             # Calculate slab
             A = 1./np.sin(el*np.pi/180.)
@@ -45,10 +49,13 @@ class AtmosphereFilter:
             elMids = (elEdges[:-1] + elEdges[1:])/2.
             s = np.histogram(el[gd], elEdges, weights=tod[gd])[0]
             w = np.histogram(el[gd], elEdges)[0]
-            pmdl = interp1d(elMids, s/w, bounds_error=False, fill_value=0)
+            no_zeros = np.where((w > 0))[0]
+            pmdl = interp1d(elMids[no_zeros],
+                            s[no_zeros]/w[no_zeros],
+                            bounds_error=False, fill_value=0)
             tod -= pmdl(el)
-            tod[el < elMids[0]] -= s[0]/w[0]
-            tod[el > elMids[-1]] -= s[-1]/w[-1]
+            tod[el < elMids[no_zeros[ 0]]] -= s[no_zeros[0]]/w[no_zeros[0]]
+            tod[el > elMids[no_zeros[-1]]] -= s[no_zeros[-1]]/w[no_zeros[-1]]
         except TypeError:
             return tod 
 
@@ -148,19 +155,12 @@ class Mapper:
             if self.makeAvgMap:
                 self.map_bavg, self.hits = self.avgMap(self.feed_indexs, self.x, self.y, self.tod_bavg, self.mask)
 
-                fstr = '-'.join(['{:02d}'.format(feed) for feed in self.feed_ids])
+                #fstr = '-'.join(['{:02d}'.format(feed) for feed in self.feed_ids])
 
-                outdir = '{}/Feeds-{}'.format(self.image_directory,fstr)
+                outdir = '{}'.format(self.image_directory)
                 if not os.path.exists(outdir):
                     os.makedirs(outdir)
 
-                # self.plotImages(self.map_bavg, self.hits,
-                #                 '{}/Hitmap_Feeds-{}.png'.format(outdir,fstr),
-                #                 '{}/BandAverage_Feeds-{}.png'.format(outdir,fstr),
-                #                 self.plot_circle,
-                #                 self.plot_circle_radius)
-                # self.SaveMaps(self.map_bavg,
-                #               '{}/BandAverage_Feeds-{}.fits'.format(outdir,fstr))
 
                 return self.map_bavg, self.hits
             elif self.makeHitMap:
@@ -257,6 +257,8 @@ class Mapper:
 
         outputmap = map_bavg*1.
         outputmap[:,hits != 0] /= hits[hits !=0]
+        outputmap[outputmap == 0] = np.nan
+        hits[hits == 0] = np.nan
         return outputmap, hits  * self.tsamp
 
     def featureBits(self,features, target):
@@ -271,8 +273,9 @@ class Mapper:
         output[power == target] = True
         for i in range(24):
             features[mask] -= 2**power[mask]
-            power[mask] = np.floor(np.log(features[mask])/np.log(2) )
             mask  = (features - 2**power) == 0
+            power[mask] = np.floor(np.log(features[mask])/np.log(2) )
+            power[~mask] = np.nan
             output[power == target] = True
         return output
 
@@ -384,8 +387,8 @@ class Mapper:
         loghits = self.hits*1
         loghits[loghits == 0] = np.nan
         pyplot.imshow(np.log10(loghits), aspect='auto')
-        low = int(np.min(np.log10(self.hits[self.hits > 0])))
-        high= int(np.max(np.log10(self.hits[self.hits > 0]))) + 1
+        low = int(np.nanmin(loghits))
+        high= int(np.nanmax(loghits)) + 1
         cbar = pyplot.colorbar(label=r'Seconds', ticks=np.arange(low,high))
         cbar.ax.set_yticklabels([r'10$^{%s}$' % v for v in np.arange(low,high)])
         pyplot.xlabel('{}'.format(self.wcs.wcs.ctype[0].split('-')[0]))

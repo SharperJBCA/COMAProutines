@@ -162,7 +162,7 @@ def level1_hitmaps(filename,
         
         maps = mapper(feeds, usetqdm=True)
         fstr = '-'.join(['{:02d}'.format(feed) for feed in feeds if feed in mapper.feed_ids])
-        outdir = '{}/Feeds-{}'.format(image_directory,fstr)
+        outdir = '{}'.format(image_directory)
 
         mapper.plotImages(feeds,
                           '{}/Hitmap_FeedAvg.png'.format(outdir),
@@ -180,7 +180,7 @@ def level1_hitmaps(filename,
         maps = mapper(feed)
 
         fstr = '-'.join(['{:02d}'.format(feed)])
-        outdir = '{}/Feeds-{}'.format(image_directory,fstr)
+        outdir = '{}'.format(image_directory)
 
         mapper.plotImages([feed],
                           '{}/Hitmap_Feed{:02d}.png'.format(outdir,feed),
