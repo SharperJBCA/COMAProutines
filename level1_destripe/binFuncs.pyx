@@ -40,7 +40,7 @@ def binValues2Map(double[:] image, long[:] pixels, double[:] weights, long[:] of
     cdef int noffsets = weights.size
     for i in range(nsamples):
 
-        if (pixels[i] >= 0) & (pixels[i] < maxbin) & (offsetpixels[i] > 0) & (offsetpixels[i] < noffsets):
+        if (pixels[i] >= 0) & (pixels[i] < maxbin) & (offsetpixels[i] >= 0) & (offsetpixels[i] < noffsets):
             image[pixels[i]] += weights[offsetpixels[i]]
 
 
@@ -61,12 +61,11 @@ def EstimateResidual(double[:] residual,
     
     for i in range(nsamples):
 
-        if ((pixel[i] >= 0) & (pixel[i] < maxbin1)) & ((offseti[i] >= 0) & (offseti[i] < noffsets)) & (offsetwei[offseti[i]] != 0):
-            #print(residual[offseti[i]], offsetwei[offseti[i]], counts[offseti[i]])
-            residual[offseti[i]] += (offsetval[offseti[i]]-skyval[pixel[i]])*offsetwei[offseti[i]]
+        if ((pixel[i] >= 0) & (pixel[i] < maxbin1)) & ((offseti[i] >= 0) & (offseti[i] < noffsets)) & (offsetwei[i] != 0):
+            residual[offseti[i]] += (offsetval[offseti[i]]-skyval[pixel[i]])*offsetwei[i] #offseti[i]]
             counts[offseti[i]] += 1
 
-    for i in range(noffsets):
-        if counts[i] != 0:
-            residual[i] /=  counts[i]
+    #for i in range(noffsets):
+    #    if counts[i] != 0:
+    #        residual[i] *=  noffsets/counts[i]
 

@@ -29,7 +29,7 @@ def Destriper(parameters, data):
 
     return offsetMap, offsets
 
-def CGM(data, offsets, offsetMap, niter=200):
+def CGM(data, offsets, offsetMap, niter=400):
     """
     Conj. Gradient Inversion
     """
@@ -40,85 +40,79 @@ def CGM(data, offsets, offsetMap, niter=200):
     b  = data.residual
     counts = offsets.offsets*0.
 
+    b.average()
+    Ax.average()
 
+    # Estimate initial residual
     binFuncs.EstimateResidual(Ax.offsets, # Holds the weighted residuals
                               counts,
                               offsets.offsets, # holds the target offsets
-                              b.wei, # The weights calculated from the data
+                              #b.wei, # The weights calculated from the data
+                              data.allweights,#residual.wei,
                               offsetMap.output, # Map to store the offsets in (initially all zero)
                               offsets.offsetpixels, # Maps offsets to TOD position
                               data.pixels) # Maps pixels to TOD position
-    #Ax.offsets /= counts
+
+
     print('Diag counts:',np.min(counts))
-    #r = (offsets.offsets[offsets.offsetpixels]-offsetMap.output[data.pixels])#*data.weights
-    #binFuncs.binValues(Ax.offsets, 
-    #                   offsets.offsetpixels, 
-    #                   weights=r)
-    
+
 
     #Ax.offsets = Ax.offsets/counts #* offsets.offset
     # -- Calculate the initial residual and direction vectors
     #b.sigwei *= offsets.offset
     print('Diags b.sigwei, Ax.offsets:', np.sum(b.sigwei), np.sum(Ax.offsets))
+
     residual = b.sigwei - Ax.offsets
-    r2 = b.sigwei - Ax.offsets
     direction= b.sigwei - Ax.offsets
+
+    r2 = b.sigwei - Ax.offsets
+
     # -- Initial threshhold
     thresh0 = np.sum(residual**2)
-    dnew = np.sum(residual**2)
-    alpha = 0
+    dnew    = np.sum(residual**2)
+    alpha   = 0
 
     print('Diags thresh0:', thresh0)
-
     #offsets.offsets = data.residual.offsets 
     lastoffset = 0
+    newVals = np.zeros(niter)
+    alphas  = np.zeros(niter)
+
     for i in range(niter):
         # -- Calculate conjugate search vector Ad
         lastoffset = Ax.offsets*1.
         Ax.offsets *= 0
         counts *= 0
+
+        offsetMap.clearmaps()
+        offsetMap.binOffsets(direction,
+                             data.residual.wei,
+                             offsets.offsetpixels,
+                             data.pixels)
+        offsetMap.average()
+
         binFuncs.EstimateResidual(Ax.offsets,
                                   counts,
                                   direction,
-                                  data.residual.wei,
+                                  data.allweights,#residual.wei,
                                   offsetMap.output,
                                   offsets.offsetpixels,
                                   data.pixels)
-        # Ax.offsets /= counts
-        # Axcopy = Ax.offsets*1.
-        # Ax.offsets *= 0
 
-        # r = (direction[offsets.offsetpixels]-offsetMap.output[data.pixels])#*weights
-        # binFuncs.binValues(Ax.offsets, 
-        #                   offsets.offsetpixels, 
-        #                   weights=r)
-
-        # pyplot.subplot(211)
-        # pyplot.plot(Axcopy)
-        # pyplot.subplot(212)
-        # pyplot.plot(Ax.offsets)
-        # pyplot.show()
-
-        print('Diags (Ax.offsets (1)):',np.sum(Ax.offsets))
-
+                         
         
-        #Ax.offsets = Ax.offsets/counts # * offsets.offset
-        #pyplot.subplot(211)
-        #pyplot.plot(Ax.offsets)
-        #pyplot.plot(lastoffset)
-        #pyplot.subplot(212)
-        #pyplot.plot(counts)
-        #pyplot.show()
+
         # Calculate the search vector
         dTq = np.sum(direction*Ax.offsets)
 
         # 
         alpha = dnew/dTq
-
+        alphas[i]=alpha
         # -- Update offsets
 
         olfast = offsets.offsets*1.
         offsets.offsets += alpha*direction
+        #offsets.offsets[0] = offsets.offsets[1]
 
         # -- Calculate new residual
         if np.mod(i,50) == 0:
@@ -134,26 +128,20 @@ def CGM(data, offsets, offsetMap, niter=200):
             binFuncs.EstimateResidual(Ax.offsets, # Holds the weighted residuals
                                       counts,
                                       offsets.offsets, # holds the target offsets
-                                      b.wei, # The weights calculated from the data
+                                      #b.wei, # The weights calculated from the data
+                                      data.allweights,#residual.wei,
                                       offsetMap.output, # Map to store the offsets in (initially all zero)
                                       offsets.offsetpixels, # Maps offsets to TOD position
                                       data.pixels) # Maps pixels to TOD position
-            #Ax.offsets /= counts
 
-
-            # r = (offsets.offsets[offsets.offsetpixels]-offsetMap.output[data.pixels])#*weights
-            # binFuncs.binValues(Ax.offsets, 
-            #                    offsets.offsetpixels, 
-            #                    weights=r)
             residual = b.sigwei - Ax.offsets
         else:
             residual = residual -  alpha*Ax.offsets 
-
-        print('Diag residual:' , np.sum(residual))
+        #print('Diag residual:' , np.sum(residual))
 
         dold = dnew*1.0
         dnew = np.sum(residual**2)
-
+        newVals[i] = dnew
         # --
         beta = dnew/dold
 
@@ -167,9 +155,24 @@ def CGM(data, offsets, offsetMap, niter=200):
                              data.pixels)
         offsetMap.average()
                    
-        print((-np.log10(dnew/thresh0))/6 )
-        if dnew/thresh0 < 1e-6:
+        
+
+        #print((-np.log10(dnew/thresh0))/8 )
+        if dnew/thresh0 < 1e-8:
             break
+    if False:
+        pyplot.subplot(221)
+        pyplot.plot(newVals)
+        pyplot.yscale('log')
+        pyplot.xscale('log')
+        pyplot.grid()
+        pyplot.subplot(222)
+        pyplot.plot(alphas)
+        pyplot.yscale('log')
+        pyplot.xscale('log')
+        pyplot.grid()
+        pyplot.show()
+    print('Achieved {} in {} steps'.format(dnew/thresh0, i))
 
     offsetMap.clearmaps()
     offsetMap.binOffsets(offsets.offsets,

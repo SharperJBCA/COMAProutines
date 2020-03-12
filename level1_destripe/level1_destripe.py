@@ -18,13 +18,23 @@ from Types import *
 
 from Destriper import Destriper
 
+import ast
+class PythonLiteralOption(click.Option):
+
+    def type_cast_value(self, ctx, value):
+        try:
+            return ast.literal_eval(value)
+        except:
+            raise click.BadParameter(value)
+
 
 @click.command()
 @click.argument('filename')#, help='Level 1 hdf5 file')
-def call_level1_destripe(filename):
-    level1_destripe(filename)
+@click.option('--options', cls=PythonLiteralOption, default="{}")
+def call_level1_destripe(filename, options):
+    level1_destripe(filename, options)
 
-def level1_destripe(filename):
+def level1_destripe(filename,options):
     
     """Plot hit maps for feeds
 
@@ -36,41 +46,60 @@ def level1_destripe(filename):
     # Get the inputs:
     parameters = ParserClass.Parser(filename)
 
+    for k1,v1 in options.items():
+        if len(options.keys()) == 0:
+            break
+        for k2, v2 in v1.items():
+            parameters[k1][k2] = v2
+
     # Read in all the data
-    data = Data(parameters)
-    data.naive.average()
+    if not isinstance(parameters['Inputs']['feeds'], list):
+        parameters['Inputs']['feeds'] = [parameters['Inputs']['feeds']]
+    if not isinstance(parameters['Inputs']['frequencies'], list):
+        parameters['Inputs']['frequencies'] = [parameters['Inputs']['frequencies']]
+    for band in parameters['Inputs']['bands']:
+        for frequency in parameters['Inputs']['frequencies']:
 
-    #print(np.sum(data.todall))
-    #pyplot.plot(data.todall,',')
-    #pyplot.show()
+            # Data parsing object
+            data = DataLevel2(parameters,band=band,frequency=frequency,keeptod=True)
+            data.naive.average()
 
-    offsetMap, offsets = Destriper(parameters, data)
+
+            offsetMap, offsets = Destriper(parameters, data)
+
+            offsets.average()
+            #pyplot.plot(data.todall-offsets())
+            #pyplot.plot(offsets())
+            #pyplot.show()
+
+            from astropy.io import fits
+            hdu = fits.PrimaryHDU(data.naive()-offsetMap(),header=data.naive.wcs.to_header())
+            hits = fits.ImageHDU(data.hits(returnsum=True), header=data.hits.wcs.to_header())
+            naive   = fits.ImageHDU(data.naive(), header=data.hits.wcs.to_header())
+            offsets = fits.ImageHDU(offsetMap(), header=data.hits.wcs.to_header())
+            
+            hdu1 = fits.HDUList([hdu, hits,naive,offsets])
+            feedstrs = [str(v) for v in parameters['Inputs']['feeds']]
+            hdu1.writeto('fitsfiles/fg4_feeds{}_offset{}_band{}_freq{}.fits'.format('-'.join(feedstrs),
+                parameters['Destriper']['offset'],
+                band,frequency),overwrite=True)
+
+if __name__ == "__main__":
+    call_level1_destripe()
 
     #m = data.naive()
     #m[m == 0] = np.nan
     #pyplot.plot(data.todall)
     #pyplot.plot(np.repeat(offsets.offsets,offsets.offset))
     #pyplot.figure()
-    pyplot.subplot(221)
-    pyplot.imshow(data.naive())
-    pyplot.subplot(222)
-    pyplot.imshow(data.naive()-offsetMap(),vmin=-2e3,vmax=2e3)
-    pyplot.colorbar()
-    pyplot.subplot(223)
-    pyplot.imshow(offsetMap())
+    # pyplot.subplot(221)
+    # pyplot.imshow(data.naive())
+    # pyplot.subplot(222)
+    # pyplot.imshow(data.naive()-offsetMap(),vmin=-2e3,vmax=2e3)
+    # pyplot.colorbar()
+    # pyplot.subplot(223)
+    # pyplot.imshow(offsetMap())
 
-    pyplot.figure()
-    pyplot.imshow(data.naive()-offsetMap(),vmin=0,vmax=1.5e3)
-    pyplot.show()
-
-    from astropy.io import fits
-    hdu = fits.PrimaryHDU(data.naive()-offsetMap(),header=data.naive.wcs.to_header())
-    hits = fits.ImageHDU(data.hits(returnsum=True), header=data.hits.wcs.to_header())
-    naive   = fits.ImageHDU(data.naive(), header=data.hits.wcs.to_header())
-    offsets = fits.ImageHDU(offsetMap(), header=data.hits.wcs.to_header())
-
-    hdu1 = fits.HDUList([hdu, hits,naive,offsets])
-    hdu1.writeto('fg6_all.fits',overwrite=True)
-
-if __name__ == "__main__":
-    call_level1_destripe()
+    # pyplot.figure()
+    # pyplot.imshow(data.naive()-offsetMap(),vmin=0,vmax=1.5e3)
+    # pyplot.show()
