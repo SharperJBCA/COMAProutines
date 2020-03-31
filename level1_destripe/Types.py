@@ -638,6 +638,103 @@ class DataLevel2(Data):
         self.hits.accumulatehits(self.pixels[self.chunks[i][0]:self.chunks[i][1]])
         self.residual.accumulate(tod,weights,self.chunks[i])
 
+
+class DataLevel2PCA(DataLevel2):
+
+    # Add some PCA functions
+
+    def readData(self, i, filename):
+        """
+        Reads data
+        """    
+        d = h5py.File(filename,'r')
+        # -- Only want to look at the observation data
+        features = d['level1/spectrometer/features'][:]
+        selectFeature = self.featureBits(features.astype(float), self.ifeature)
+        features = features[selectFeature]
+
+        # --- Feed position indices can change
+        self.FeedIndex = self.GetFeeds(d['level1/spectrometer/feeds'][...], self.Feeds)
+
+        self.pixels[self.chunks[i][0]:self.chunks[i][1]] = self.skyPixels(i, d,self.FeedIndex, selectFeature)
+        el  = (d['level1/spectrometer/pixel_pointing/pixel_el'][...])[self.FeedIndex[:,None],selectFeature]
+        el  = el[...,0:self.datasizes[i]]
+
+        # Now accumulate the TOD into the naive map
+        tod = d['level2/averaged_tod'][self.FeedIndex,...]
+
+        # Average together channels here using a channel mask and 
+        # appropriate weights (1/rms**2)
+
+        # Then apply PCA filter between feeds
+        
+        nFeeds, nBands, nChannels, nSamples = tod.shape
+    
+        print('check band/freq', self.band, self.frequency)
+        tod = tod[:,self.band,self.frequency,selectFeature]
+
+        # At this point TOD needs to be shape: (nFeeds, nSamples)
+        
+        tod = tod[...,0:self.datasizes[i]]
+
+        
+
+
+        weights = np.ones(tod.shape)
+        t = np.arange(tod.shape[-1])
+        for j, feed in enumerate(self.FeedIndex):
+
+            #tod[j,:] = butt_highpass(tod[j,:],filter_frequency, sample_frequency)
+            # E.g. if filter_frequency = 0.1, all time scales > 10s are removed, sample_frequency=50Hz
+            #tod[j,:] = butt_highpass(tod[j,:],1/10., sample_frequency)
+
+
+            bad = np.isnan(tod[j,:])
+            if all(bad):
+                continue
+            # Interpolate over nan values
+            tod[j,bad] = np.interp(t[bad], t[~bad], tod[j,~bad]) 
+            # Atmosphere removal
+            pmdl = np.poly1d(np.polyfit(1./np.sin(el[j,:]*np.pi/180.), tod[j,:],1))
+            tod[j,:] -= pmdl(1./np.sin(el[j,:]*np.pi/180.))
+            tod[j,:] -= np.nanmedian(tod[j,:])
+
+
+            # Calculate the weight for this feed
+            N = tod.shape[1]//2 * 2
+            diffTOD = tod[j,:N:2]-tod[j,1:N:2]
+            rms = np.sqrt(np.nanmedian(diffTOD**2)*1.4826)
+            weights[j,:] *= 1./rms**2
+
+            # Remove spikes
+            select = np.where((np.abs(diffTOD) > rms*5))[0]*2
+            weights[j,select] *= 1e-10
+            print('Horn', self.Feeds[j], rms)
+
+        # Recalculate feed weights (due to spikes)
+        rms = np.sqrt(np.nanmedian(tod**2,axis=1))*1.4826
+        for j, feed in enumerate(self.FeedIndex):
+            select = np.abs(tod[j,:]) > rms[j]*10
+            weights[j,select] *= 1e-10
+
+        weights = weights.flatten()
+        tod = tod.flatten()
+        bad = (np.isnan(tod)) | (self.pixels[self.chunks[i][0]:self.chunks[i][1]] == -1)
+        tod[bad] = 0
+        weights[bad] = 0
+
+
+        if self.keeptod:
+            self.todall[self.chunks[i][0]:self.chunks[i][1]] = tod*1.
+
+        self.allweights[self.chunks[i][0]:self.chunks[i][1]] = weights
+        
+        self.naive.accumulate(tod,weights,self.pixels[self.chunks[i][0]:self.chunks[i][1]])
+        self.hits.accumulatehits(self.pixels[self.chunks[i][0]:self.chunks[i][1]])
+        self.residual.accumulate(tod,weights,self.chunks[i])
+
+
+
 class DataWithOffsets(DataLevel2):
     def __init__(self, parameters,feeds=[1], bands=[0], frequencies=[0],keeptod=False):
         
