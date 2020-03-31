@@ -46,6 +46,8 @@ def level1_destripe(filename,options):
     # Get the inputs:
     parameters = ParserClass.Parser(filename)
 
+    title = parameters['Inputs']['title'] 
+
     for k1,v1 in options.items():
         if len(options.keys()) == 0:
             break
@@ -57,8 +59,13 @@ def level1_destripe(filename,options):
         parameters['Inputs']['feeds'] = [parameters['Inputs']['feeds']]
     if not isinstance(parameters['Inputs']['frequencies'], list):
         parameters['Inputs']['frequencies'] = [parameters['Inputs']['frequencies']]
-    for band in parameters['Inputs']['bands']:
-        for frequency in parameters['Inputs']['frequencies']:
+    if not isinstance(parameters['Inputs']['bands'], list):
+        parameters['Inputs']['bands'] = [parameters['Inputs']['bands']]
+
+
+    # loop over band and frequency
+    for band in np.array(parameters['Inputs']['bands']).astype(int):
+        for frequency in np.array(parameters['Inputs']['frequencies']).astype(int):
 
             # Data parsing object
             data = DataLevel2(parameters,band=band,frequency=frequency,keeptod=True)
@@ -68,19 +75,59 @@ def level1_destripe(filename,options):
             offsetMap, offsets = Destriper(parameters, data)
 
             offsets.average()
-            #pyplot.plot(data.todall-offsets())
-            #pyplot.plot(offsets())
-            #pyplot.show()
+
+            # Write offsets back out to the level2 files
+            toffs = offsets()
+            nFeeds = len(parameters['Inputs']['feeds'])
+            
+            filelist = np.loadtxt(parameters['Inputs']['filelist'],dtype=str,ndmin=1)
+
+            # Will define Nsamples, datasizes[], and chunks[[]]
+
+            if parameters['Inputs']['saveoffsets']:
+                for (chunk,filename) in zip(data.chunks,filelist):
+                    out = h5py.File(filename,'a')
+                    try:
+                        features = out['level1/spectrometer/features'][:]
+                    except KeyError:
+                        out.close()
+                        continue
+                    selectFeature = data.featureBits(features.astype(float), data.ifeature)
+                    selIDs = np.where(selectFeature)[0]
+                    N = len(features[selectFeature])
+                    N = int((N//data.offsetLen) * data.offsetLen)
+                    selectFeature[selIDs[N:]] = False
+        
+                    if not 'level2/offsets' in out:
+                        out.create_dataset('level2/offsets',out['level2/averaged_tod'].shape)
+                        
+                    thisOffsets = toffs[chunk[0]:chunk[1]]
+                    nSamples = thisOffsets.size//nFeeds
+                    thisOffsets = np.reshape(thisOffsets,(nFeeds, nSamples))
+                    try:
+                        dset = out['level2/offsets']
+                    except KeyError:
+                        print(filename)
+                        del out['level2/offsets']
+                        out.create_dataset('level2/offsets',out['level2/averaged_tod'].shape)
+
+                    testtod = np.zeros(out['level2/averaged_tod'].shape[-1])
+                    for (i,feedid) in enumerate(data.FeedIndex):
+                        testtod*=0.
+                        testtod[selectFeature] = thisOffsets[i,:]
+                        dset[feedid,band,frequency,:] = testtod# thisOffsets[i,:]
+                    out.close()
 
             from astropy.io import fits
             hdu = fits.PrimaryHDU(data.naive()-offsetMap(),header=data.naive.wcs.to_header())
+            weights = fits.ImageHDU(data.naive.weights(), header=data.hits.wcs.to_header())
             hits = fits.ImageHDU(data.hits(returnsum=True), header=data.hits.wcs.to_header())
             naive   = fits.ImageHDU(data.naive(), header=data.hits.wcs.to_header())
             offsets = fits.ImageHDU(offsetMap(), header=data.hits.wcs.to_header())
             
-            hdu1 = fits.HDUList([hdu, hits,naive,offsets])
+            hdu1 = fits.HDUList([hdu, weights,hits,naive,offsets])
             feedstrs = [str(v) for v in parameters['Inputs']['feeds']]
-            hdu1.writeto('fitsfiles/fg4_feeds{}_offset{}_band{}_freq{}.fits'.format('-'.join(feedstrs),
+            hdu1.writeto('fitsfiles/gfield-allfeeds/{}_feeds{}_offset{}_band{}_freq{}.fits'.format(title,'-'.join(feedstrs),
                 parameters['Destriper']['offset'],
                 band,frequency),overwrite=True)
 

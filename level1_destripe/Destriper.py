@@ -77,6 +77,9 @@ def CGM(data, offsets, offsetMap, niter=400):
     lastoffset = 0
     newVals = np.zeros(niter)
     alphas  = np.zeros(niter)
+    betas   = np.zeros(niter)
+    if np.isnan(np.sum(b.sigwei)):
+        return
 
     for i in range(niter):
         # -- Calculate conjugate search vector Ad
@@ -115,7 +118,7 @@ def CGM(data, offsets, offsetMap, niter=400):
         #offsets.offsets[0] = offsets.offsets[1]
 
         # -- Calculate new residual
-        if np.mod(i,50) == 0:
+        if np.mod(i,5) == 0:
             offsetMap.clearmaps()
             offsetMap.binOffsets(offsets.offsets,
                                  data.residual.wei,
@@ -144,6 +147,7 @@ def CGM(data, offsets, offsetMap, niter=400):
         newVals[i] = dnew
         # --
         beta = dnew/dold
+        betas[i] = beta
 
         # -- Update direction
         direction = residual + beta*direction
@@ -170,6 +174,14 @@ def CGM(data, offsets, offsetMap, niter=400):
         pyplot.plot(alphas)
         pyplot.yscale('log')
         pyplot.xscale('log')
+        pyplot.grid()
+        pyplot.subplot(223)
+        pyplot.plot(betas)
+        pyplot.yscale('log')
+        pyplot.xscale('log')
+        pyplot.grid()
+        pyplot.subplot(224)
+        pyplot.plot(offsets())
         pyplot.grid()
         pyplot.show()
     print('Achieved {} in {} steps'.format(dnew/thresh0, i))
