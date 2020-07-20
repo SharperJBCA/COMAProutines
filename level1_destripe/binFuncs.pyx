@@ -61,11 +61,64 @@ def EstimateResidual(double[:] residual,
     
     for i in range(nsamples):
 
-        if ((pixel[i] >= 0) & (pixel[i] < maxbin1)) & ((offseti[i] >= 0) & (offseti[i] < noffsets)) & (offsetwei[i] != 0):
+        if ((pixel[i] >= 0) & (pixel[i] < maxbin1)) &\
+           ((offseti[i] >= 0) & (offseti[i] < noffsets)) &\
+           (offsetwei[i] != 0):
             residual[offseti[i]] += (offsetval[offseti[i]]-skyval[pixel[i]])*offsetwei[i] #offseti[i]]
             counts[offseti[i]] += 1
 
-    #for i in range(noffsets):
-    #    if counts[i] != 0:
-    #        residual[i] *=  noffsets/counts[i]
 
+def EstimateResidualSimplePrior(double[:] residual, 
+                                double[:] counts,
+                                double[:] offsetval,
+                                double[:] offsetwei,
+                                double[:] skyval,
+                                long[:] offseti, 
+                                long[:] pixel):
+
+    cdef int i
+    cdef int nsamples = pixel.size
+    cdef int maxbin1  = skyval.size
+    cdef int noffsets  = residual.size
+    
+    for i in range(nsamples):
+
+        if ((pixel[i] >= 0) & (pixel[i] < maxbin1)) &\
+           ((offseti[i] >= 0) & (offseti[i] < noffsets)) &\
+           (offsetwei[i] != 0):
+            residual[offseti[i]] += (offsetval[offseti[i]]-skyval[pixel[i]])*offsetwei[i]
+            counts[offseti[i]] += 1
+
+    for i in range(noffsets):
+        residual[i] += offsetval[i]
+
+def EstimateResidualFlatMapPrior(double[:] residual, 
+                                 double[:] counts,
+                                 double[:] offsetval,
+                                 double[:] offsetwei,
+                                 double[:] skyval,
+                                 long[:] offseti, 
+                                 long[:] pixel,
+                                 double[:] pixhits,
+                                 double[:] pcounts):
+
+    cdef int i
+    cdef int nsamples = pixel.size
+    cdef int maxbin1  = skyval.size
+    cdef int noffsets  = residual.size
+    
+    for i in range(nsamples):
+
+        if ((pixel[i] >= 0) & (pixel[i] < maxbin1)) &\
+           ((offseti[i] >= 0) & (offseti[i] < noffsets)) &\
+           (offsetwei[i] != 0):
+            residual[offseti[i]] += (offsetval[offseti[i]]-skyval[pixel[i]])*offsetwei[i]
+            counts[offseti[i]]  += 1
+
+            pcounts[offseti[i]] += 1./pixhits[pixel[i]]**2
+
+    for i in range(noffsets):
+        if (pcounts[i] > 0):
+            residual[i] += offsetval[i]/pcounts[i]
+        else:
+            residual[i] += offsetval[i]

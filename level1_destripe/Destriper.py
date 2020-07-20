@@ -1,7 +1,7 @@
 import numpy as np
 from matplotlib import pyplot
 
-from Types import Offsets, Map
+from Types import Offsets, Map, HealpixMap, ProxyHealpixMap
 import binFuncs
 
 def Destriper(parameters, data):
@@ -29,6 +29,29 @@ def Destriper(parameters, data):
 
     return offsetMap, offsets
 
+def DestriperHPX(parameters, data):
+    """
+    Destriping routines
+    """
+    niter = int(parameters['Destriper']['niter'])
+
+    # NB : Need to change offsets to ensure that each
+    # is temporally continuous in the future, for now ignore this.
+    offsetLen = parameters['Destriper']['offset']
+    Noffsets  = data.Nsamples//offsetLen
+
+    # Offsets for storing the outputs
+    offsets   = Offsets(offsetLen, Noffsets,  data.Nsamples)
+
+    # For storing the offsets on the sky
+    offsetMap = ProxyHealpixMap(data.naive.nside,npix=data.naive.npix)
+    offsetMap.uni2pix = data.naive.uni2pix
+
+    CGM(data, offsets, offsetMap, niter=niter)
+
+
+    return offsetMap, offsets
+
 def CGM(data, offsets, offsetMap, niter=400):
     """
     Conj. Gradient Inversion
@@ -39,20 +62,24 @@ def CGM(data, offsets, offsetMap, niter=400):
     Ax = Offsets(offsets.offset, offsets.Noffsets, offsets.Nsamples)
     b  = data.residual
     counts = offsets.offsets*0.
+    pcounts= offsets.offsets*0. # for storing Npix**4 per offset
 
     b.average()
     Ax.average()
 
     # Estimate initial residual
-    binFuncs.EstimateResidual(Ax.offsets, # Holds the weighted residuals
-                              counts,
-                              offsets.offsets, # holds the target offsets
-                              #b.wei, # The weights calculated from the data
-                              data.allweights,#residual.wei,
-                              offsetMap.output, # Map to store the offsets in (initially all zero)
-                              offsets.offsetpixels, # Maps offsets to TOD position
-                              data.pixels) # Maps pixels to TOD position
-
+    pcounts *= 0
+    binFuncs.EstimateResidualSimplePrior(Ax.offsets, # Holds the weighted residuals
+                                          counts,
+                                          offsets.offsets, # holds the target offsets
+                                          #b.wei, # The weights calculated from the data
+                                          data.allweights,#residual.wei,
+                                          offsetMap.output, # Map to store the offsets in (initially all zero)
+                                          offsets.offsetpixels, # Maps offsets to TOD position
+                                          data.pixels)
+                                     #     data.hits.sigwei,
+                                      #    pcounts) # Maps pixels to TOD position
+    
 
     print('Diag counts:',np.min(counts))
 
@@ -94,13 +121,16 @@ def CGM(data, offsets, offsetMap, niter=400):
                              data.pixels)
         offsetMap.average()
 
-        binFuncs.EstimateResidual(Ax.offsets,
-                                  counts,
-                                  direction,
-                                  data.allweights,#residual.wei,
-                                  offsetMap.output,
-                                  offsets.offsetpixels,
-                                  data.pixels)
+        pcounts *= 0
+        binFuncs.EstimateResidualSimplePrior(Ax.offsets,
+                                             counts,
+                                             direction,
+                                             data.allweights,#residual.wei,
+                                             offsetMap.output,
+                                             offsets.offsetpixels,
+                                             data.pixels)
+                                             #data.hits.sigwei,
+                                            # pcounts)
 
                          
         
@@ -128,14 +158,17 @@ def CGM(data, offsets, offsetMap, niter=400):
             Ax.offsets *= 0
             counts = offsets.offsets*0.
 
-            binFuncs.EstimateResidual(Ax.offsets, # Holds the weighted residuals
-                                      counts,
-                                      offsets.offsets, # holds the target offsets
-                                      #b.wei, # The weights calculated from the data
-                                      data.allweights,#residual.wei,
-                                      offsetMap.output, # Map to store the offsets in (initially all zero)
-                                      offsets.offsetpixels, # Maps offsets to TOD position
-                                      data.pixels) # Maps pixels to TOD position
+            pcounts *= 0
+            binFuncs.EstimateResidualSimplePrior(Ax.offsets, # Holds the weighted residuals
+                                                 counts,
+                                                 offsets.offsets, # holds the target offsets
+                                                 #b.wei, # The weights calculated from the data
+                                                 data.allweights,#residual.wei,
+                                                 offsetMap.output, # Map to store the offsets in (initially all zero)
+                                                 offsets.offsetpixels, # Maps offsets to TOD position
+                                                 data.pixels)
+                                                #  data.hits.sigwei,
+                                                #  pcounts) # Maps pixels to TOD position
 
             residual = b.sigwei - Ax.offsets
         else:
@@ -161,7 +194,7 @@ def CGM(data, offsets, offsetMap, niter=400):
                    
         
 
-        #print((-np.log10(dnew/thresh0))/8 )
+        print((-np.log10(dnew/thresh0))/8 )
         if dnew/thresh0 < 1e-8:
             break
     if False:

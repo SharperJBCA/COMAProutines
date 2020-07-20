@@ -1,0 +1,22 @@
+1) Run this script to produce a list of all Level2 files:
+> python CreateFilelist.py /path/to/level2files/ <obs type>
+obstypes - fg* GField0* TauA CasA CygA
+fg6 - Is a GField centred on W43
+fg4 - M31
+
+output: <obstype>.list
+
+2) Next crop list to contain only "good" observations
+At the moment we use the "exponent" of 1/f noise fits:
+
+> python PlotFnoise.py <obstype>
+
+output: Plots/<obstype>_good.list
+outputs also some figures that show the 1/f noise properties for each obs ID.
+
+3) Run the destriper, pass input parameter files, will output a Healpix fits file.
+
+> python level1_destripe_avg.py <parameterfile.ini> --options "<Include optional commands here>"
+
+(For example of how to use --options see runall.sh)
+
