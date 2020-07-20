@@ -18,9 +18,10 @@ if __name__=="__main__":
             except OSError:
                 continue
             try:
-                src = d['comap'].attrs['source'].decode('ASCII')
+                src = d['level1/comap'].attrs['source'].decode('ASCII')
+                comment = d['level1/comap'].attrs['comment'].decode('utf-8')
             except KeyError:
                 continue
-            if target in src:
+            if (target in src) & (not 'Sky nod' in comment):
                 print(f)
             d.close()
