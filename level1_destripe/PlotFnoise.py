@@ -84,7 +84,7 @@ def fnoise_list(mode = 'GFields'):
     pyplot.grid()
     pyplot.savefig('Plots/Fnoise_feed{}_{}.png'.format(feed,mode),bbox_inches='tight')
     pyplot.savefig('Plots/Fnoise_feed{}_{}.pdf'.format(feed,mode),bbox_inches='tight')
-    pyplot.show()
+    pyplot.clf()
 
 def fnoise_plots(mode,ifeed):
     filelist = np.loadtxt(sys.argv[1],dtype=str)
@@ -322,7 +322,7 @@ def wnoise_matrix():
     wnoise[wnoise == 0] = np.nan
 
     pyplot.imshow(wnoise[:,0,:])
-    pyplot.show()
+    pyplot.ckf()
 
     channelmask = np.zeros((wnoise.shape[0],wnoise.shape[1],wnoise.shape[2])).astype(bool)
     from scipy.signal import medfilt
@@ -377,7 +377,7 @@ def fnoise_summary(mode='GFields'):
     filelist = filelist[np.argsort(obsid)]
     obsid = np.sort(obsid)
 
-    nfeeds, nbands, nchans = 18, 4, 64
+    nfeeds, nbands, nchans = 20, 4, 64
     fnoise = np.zeros((len(filelist),nfeeds,nbands,nchans))*np.nan# nfeeds*nbands*nchans))
     counts = np.zeros((len(filelist),nfeeds,nbands,nchans))*np.nan# nfeeds*nbands*nchans))
     alphas = np.zeros((len(filelist),nfeeds,nbands,nchans))*np.nan# nfeeds*nbands*nchans))
@@ -398,7 +398,7 @@ def fnoise_summary(mode='GFields'):
         except OSError:
             print('{} cannot be opened (Resource unavailable)'.format(filename))
 
-            
+        
         try:
             fits = data['level2/fnoise_fits'][...,:]
             rms = data['level2/wnoise_auto'][...,0]
@@ -413,37 +413,17 @@ def fnoise_summary(mode='GFields'):
             for ifeed in range(len(feeds)):
                 if feeds[ifeed] == 20:
                     continue
-                # for band in range(4):
-                #     pyplot.subplot(2,2,1+band)
-                #     for channel in range(64):
-                #         pyplot.plot(nu[ifeed,band,channel,:],ps[ifeed,band,channel,:]*1e6,
-                #                     color=palette[0],alpha=0.5,linewidth=2,zorder=0)
-                #         pyplot.plot(nu[0,band,channel,:],fnoisefunc(fits[ifeed,band,channel,:],
-                #                                                     nu[0,band,channel,:],
-                #                                                     rms[ifeed,band,channel])*1e6,
-                #                     color='k',alpha=0.5,zorder=1)
-                #     pyplot.yscale('log')
-                #     pyplot.xscale('log')
-                #     pyplot.title(bands[band].decode('utf-8'),size=10)
-                #     pyplot.xlim(np.min(nu[0,band,channel,:]), np.max(nu[0,band,channel,:]))
-                #     pyplot.xticks(size=8)
-                #     pyplot.yticks(size=8)
-                #     pyplot.xlabel('Hz',size=10)
-                #     pyplot.ylabel('Power (mK^2)',size=10)
-                #     pyplot.grid()
-                # pyplot.tight_layout()
-                # pyplot.suptitle('Obsid {} Feed {:02d}'.format(obsid,feeds[ifeed]))
-                # pyplot.savefig('Plots/PowerSpecs/{}_{:02d}_ps.png'.format(obsid,feeds[ifeed]),bbox_inches='tight')
-                # pyplot.clf()
-            
             
             power = rms**2 * (f0/10**fits[...,0])**fits[...,1]
-            good = np.isfinite(power)
-            fnoise[ifile,good] = power[good]
-            counts[ifile,good] = 1
-            alphas[ifile,good] = fits[good,1]
-            alphaN[ifile,good] = 1
-            wnoise[ifile,good] = rms[good]**2
+            for ifeed, feed in enumerate(feeds):
+                if feed == 20:
+                    continue
+                good = np.isfinite(power[ifeed])
+                fnoise[ifile,feed-1,good] = power[ifeed,good]
+                counts[ifile,feed-1,good] = 1
+                alphas[ifile,feed-1,good] = fits[ifeed,good,1]
+                alphaN[ifile,feed-1,good] = 1
+                wnoise[ifile,feed-1,good] = rms[ifeed,good]**2
 
             
         except KeyError:
@@ -456,12 +436,6 @@ def fnoise_summary(mode='GFields'):
         nfreqs=freqs.size
         freqs = np.mean(np.reshape(freqs,(freqs.shape[0], freqs.shape[1]//16,16)),axis=-1)
         data.close()
-    # fnoise = np.sqrt(fnoise/counts)
-    # alphas = alphas/counts
-    # fnoise[fnoise == 0] = np.nan
-    # alphas[alphas == 0] = np.nan
-    # wnoise = np.sqrt(wnoise/counts)
-    # wnoise[wnoise == 0] = np.nan
 
 
     pyplot.figure(figsize=(16,16))
@@ -485,8 +459,6 @@ def fnoise_summary(mode='GFields'):
 
         pyplot.subplot(3,3,1+np.mod(ifeed,9))
         plotinfo, = pyplot.plot(freqs[sfreqs],fn_mean,label='1/f at 1Hz')
-        print(fn_mean[:5])
-        print(fn_rms[:5])
         pyplot.fill_between(freqs[sfreqs], fn_mean-fn_rms, fn_mean+fn_rms, color=plotinfo.get_color(),alpha=0.25,zorder=0)
         plotinfo, = pyplot.plot(freqs[sfreqs],wn_mean,label='white noise')
         pyplot.fill_between(freqs[sfreqs], wn_mean-wn_rms, wn_mean+wn_rms, color=plotinfo.get_color(),alpha=0.25,zorder=0)
