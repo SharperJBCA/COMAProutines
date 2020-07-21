@@ -65,7 +65,7 @@ def level1_destripe(filename,options):
     filelist = np.loadtxt(parameters['Inputs']['filelist'],dtype=str,ndmin=1)
 
     nside = int(parameters['Inputs']['nside'])
-    data = DataLevel2AverageHPX_test(filelist,parameters,nside=nside,keeptod=False,subtract_sky=True)
+    data = DataLevel2AverageHPX_test(filelist,parameters,nside=nside,keeptod=False,subtract_sky=False)
     
     offsetMap, offsets = DestriperHPX(parameters, data)
 

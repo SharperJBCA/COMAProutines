@@ -221,29 +221,28 @@ class Data:
             
         # Loop over each scan end, save start and ends that are greater than
         # some threshold
-        scan_length_threshold = 1000
-        starts = []
-        ends   = []
-        temp_mask = np.zeros(
-        for i,(s,e) in enumerate(zip(end_indices[:-1],end_indices[1:])): # These are in the new indexing 
-            if (e-s) > scan_length_threshold:
-                print(i, s, e, e-s)
+        # scan_length_threshold = 1000
+        # starts = []
+        # ends   = []
+        # for i,(s,e) in enumerate(zip(end_indices[:-1],end_indices[1:])): # These are in the new indexing 
+        #     if (e-s) > scan_length_threshold:
+        #         print(i, s, e, e-s)
                 
-                starts += [s]
-                ends += [e]
-            else:
-                mask[s:e] = True
-        oldindex = newindex*1 #np.arange(len(mjd))[~mask] # old positions
-        newindex = np.arange(len(oldindex)) # new positions
-        mapOld2New = {o:n for (o,n) in zip(oldindex,newindex)}
-        starts = [mapOld2New[s] for s in starts]
-        ends   = [mapOld2New[e] for e in ends]
+        #         starts += [s]
+        #         ends += [e]
+        #     else:
+        #         mask[s:e] = True
+        # oldindex = newindex*1 #np.arange(len(mjd))[~mask] # old positions
+        # newindex = np.arange(len(oldindex)) # new positions
+        # mapOld2New = {o:n for (o,n) in zip(oldindex,newindex)}
+        # starts = [mapOld2New[s] for s in starts]
+        # ends   = [mapOld2New[e] for e in ends]
 
-        pyplot.plot(mask)
-        pyplot.show()
+        # pyplot.plot(mask)
+        # pyplot.show()
 
 
-        return (mask == False), starts, ends # end_indices
+        return (mask == False), end_indices[:-1],end_indices[1:] #starts, ends # end_indices
 
 
     def featureBits(self,features, target):
@@ -1132,9 +1131,9 @@ class DataLevel2AverageHPX(DataLevel2Average):
                 rot = hp.rotator.Rotator(coord=['C','G'])
                 gb, gl = rot((90-gb)*np.pi/180, gl*np.pi/180.)
                 mdl = hp.get_interp_val(self.sky_model, gb, gl)
-                pyplot.plot(tod-np.nanmedian(tod))
-                pyplot.plot(mdl)
-                pyplot.show()
+                #pyplot.plot(tod-np.nanmedian(tod))
+                #pyplot.plot(mdl)
+                #pyplot.show()
                 tod -= mdl 
 
             tod= self.filter_atmosphere(tod,y)
@@ -1149,12 +1148,12 @@ class DataLevel2AverageHPX(DataLevel2Average):
             #print(a)
             #pyplot.plot(x,tod,',')
             mdl = np.sum(templates*a[:,None],axis=0)
-            pyplot.plot(tod)
-            pyplot.plot( mdl)
-            pyplot.show()
+            #pyplot.plot(tod)
+            #pyplot.plot( mdl)
+            #pyplot.show()
             tod -= np.sum(templates*a[:,None],axis=0)
-            pyplot.plot(tod)
-            pyplot.show()
+            #pyplot.plot(tod)
+            #pyplot.show()
 
             #for k, crd in coords.items():
             #pmdl = np.poly1d(np.polyfit(x, tod,1))
@@ -1583,46 +1582,46 @@ class DataWithOffsets(DataLevel2):
 
         fnu= np.fft.fftfreq(ps.size, d=1./50.)
 
-        pyplot.subplot(211)
-        pyplot.plot(fnu[1:fnu.size//2], pso[1:ps.size//2]/ps.size*1e6, label='Original')
-        pyplot.plot(fnu[1:fnu.size//2], ps[1:ps.size//2]/ps.size*1e6 , label='Destriped')
+        # pyplot.subplot(211)
+        # pyplot.plot(fnu[1:fnu.size//2], pso[1:ps.size//2]/ps.size*1e6, label='Original')
+        # pyplot.plot(fnu[1:fnu.size//2], ps[1:ps.size//2]/ps.size*1e6 , label='Destriped')
 
         
-        pyplot.xlabel('Sample Frequency (Hz)')
-        pyplot.ylabel(r' Power (mK$^2$)')
-        pyplot.axvline(0.025,color='r',linestyle='--')
-        pyplot.axvline(0.04 ,color='r',linestyle='--')
-        pyplot.yscale('log')
-        pyplot.xscale('log')
-        pyplot.grid()
-        pyplot.title('{} {} {}'.format(d['level1/comap'].attrs['obsid'].decode('utf-8'),  
-                                       d['level1/spectrometer/feeds'][feed], 
-                                       d['level1/spectrometer/bands'][band].decode('utf-8')))
-        pyplot.legend()
-        pyplot.subplot(212)
+        # pyplot.xlabel('Sample Frequency (Hz)')
+        # pyplot.ylabel(r' Power (mK$^2$)')
+        # pyplot.axvline(0.025,color='r',linestyle='--')
+        # pyplot.axvline(0.04 ,color='r',linestyle='--')
+        # pyplot.yscale('log')
+        # pyplot.xscale('log')
+        # pyplot.grid()
+        # pyplot.title('{} {} {}'.format(d['level1/comap'].attrs['obsid'].decode('utf-8'),  
+        #                                d['level1/spectrometer/feeds'][feed], 
+        #                                d['level1/spectrometer/bands'][band].decode('utf-8')))
+        # pyplot.legend()
+        # pyplot.subplot(212)
 
         nbins = 6
         azEdges = np.linspace(np.min(az[select[0]:select[1]]),np.max(az[select[0]:select[1]]),nbins+1)
         azMids  = (azEdges[1:]+azEdges[:-1])/2.
 
-        print(az.shape, resid.shape)
+        #print(az.shape, resid.shape)
         sw = np.histogram(az[select[0]:select[1]],azEdges,weights=resid)[0]
         w  = np.histogram(az[select[0]:select[1]],azEdges)[0]
         m  = sw/w
         #pyplot.plot(azMids, w)
         tmin = t[select[0]]
-        pyplot.plot(t[select[0]:select[1]]/50.-tmin/50.,resid)
-        #pyplot.plot(azMids, m)
-        pyplot.plot(t[select[0]:select[1]]/50.-tmin/50.,np.interp(az[select[0]:select[1]],azMids[np.isfinite(m)],m[np.isfinite(m)]))
-        pyplot.grid()
-        pyplot.xlim(0,120)
-        pyplot.xlabel('Time (seconds)')
-        pyplot.ylabel(r'$T_a$ (K)')
-        pyplot.savefig('maps/plots/powerspecs/{}_{}_{}.png'.format(d['level1/comap'].attrs['obsid'].decode('utf-8'),
-                                                                   d['level1/spectrometer/feeds'][feed], 
-                                                                   d['level1/spectrometer/bands'][band].decode('utf-8')))
+        # pyplot.plot(t[select[0]:select[1]]/50.-tmin/50.,resid)
+        # #pyplot.plot(azMids, m)
+        # pyplot.plot(t[select[0]:select[1]]/50.-tmin/50.,np.interp(az[select[0]:select[1]],azMids[np.isfinite(m)],m[np.isfinite(m)]))
+        # pyplot.grid()
+        # pyplot.xlim(0,120)
+        # pyplot.xlabel('Time (seconds)')
+        # pyplot.ylabel(r'$T_a$ (K)')
+        # pyplot.savefig('maps/plots/powerspecs/{}_{}_{}.png'.format(d['level1/comap'].attrs['obsid'].decode('utf-8'),
+        #                                                            d['level1/spectrometer/feeds'][feed], 
+        #                                                            d['level1/spectrometer/bands'][band].decode('utf-8')))
 
-        pyplot.show()
+        # pyplot.show()
 
 
         if self.keeptod:
@@ -1761,6 +1760,7 @@ class DataLevel2AverageHPX_test(DataLevel2AverageHPX):
             scan_el    = np.zeros(len(self.scan_starts))
             grad_fits  = np.zeros((len(self.scan_starts), 3))
             grad_rms  = np.zeros((len(self.scan_starts), 3))
+            tod_filter = np.zeros(tod.size)
             for iscan, (start,end) in enumerate(zip(self.scan_starts,self.scan_ends)):
                 
                 #temp_filter = np.zeros(end-start)
@@ -1794,53 +1794,33 @@ class DataLevel2AverageHPX_test(DataLevel2AverageHPX):
                 templates[0,:] = x[start:end]
                 templates[1,:] = y[start:end]
 
-                pyplot.subplot(121)
-                pyplot.plot(tod)
-                pyplot.plot(temp_filter)
-                pyplot.subplot(122)
-                pyplot.plot(temp)
-                pyplot.show()
                 niter = 100
                 a_all = np.zeros((niter,templates.shape[0]))
-                for a_iter in range(niter):
-                    sel = np.random.uniform(low=0,high=dlength,size=dlength).astype(int)
 
-                    cov = np.median(templates[:,None,sel] * templates[None,:,sel],axis=-1) * templates.shape[-1]
-                    #cov_test = templates[:,sel].dot(templates[:,sel].T)
-                    #z_test = (templates[:,sel].dot(temp[sel,None])).flatten()
-                    z = np.sum(templates[:,sel]*temp[None,sel],axis=1) #* templates.shape[-1]
-                    #print(z[:5])
-                    #print(z_test[:5])
-                
-                    #pyplot.subplot(121)
-                    #pyplot.plot((np.abs(cov)-np.abs(cov_test)).flatten())
-                    #pyplot.subplot(122)
-                    #pyplot.plot(z**2-z_test**2)
-                    #pyplot.show()
-                    try:
-                        a_all[a_iter,:] = np.linalg.solve(cov, z).flatten()
-                    except:
-                        a_all[a_iter,:] = np.nan
-                        #print(z)
-                        #print(cov)
-                        #stop
-                grad_fits[iscan,:], grad_rms[iscan,:] = np.nanmean(a_all,axis=0),np.nanstd(a_all,axis=0)
-                temp_filter += np.sum(templates*grad_fits[iscan,:,None],axis=0)
-                #tod[start:end] -= np.sum(templates*grad_fits[iscan,:,None],axis=0)
+                if (end-start) > 2000: # Very short scans are highly unstable, so don't try to fit them.
+                    for a_iter in range(niter):
+                        sel = np.random.uniform(low=0,high=dlength,size=dlength).astype(int)
+                    
+                        cov = np.median(templates[:,None,sel] * templates[None,:,sel],axis=-1) * templates.shape[-1]
+                        z = np.sum(templates[:,sel]*temp[None,sel],axis=1) 
+                        try:
+                            a_all[a_iter,:] = np.linalg.solve(cov, z).flatten()
+                        except:
+                            a_all[a_iter,:] = np.nan
+                    grad_fits[iscan,:], grad_rms[iscan,:] = np.nanmean(a_all,axis=0),np.nanstd(a_all,axis=0)
 
-                pyplot.plot(tod[start:end]-temp_filter)
-                pyplot.show()
+                tod[start:end] -= temp_filter
 
             rms = np.nanstd(tod[::2] - tod[1::2])/np.sqrt(2)
 
             if self.subtract_sky:
                 bad = (tod > rms*15) | (tod < -rms*15)
                 tod += mdl
+                badall[index,:] = bad
 
             nsteps = tod.size//self.medfilt_stepsize
                 
             todall[index,:] = tod
-            badall[index,:] = bad
         
             output_fits = h5py.File(output_filename)
             if not 'GetTOD_Fits' in output_fits:
